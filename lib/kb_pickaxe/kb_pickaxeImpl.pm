@@ -2,7 +2,7 @@ package kb_pickaxe::kb_pickaxeImpl;
 use strict;
 use Bio::KBase::Exceptions;
 # Use Semantic Versioning (2.0.0-rc.1)
-# http://semver.org 
+# http://semver.org
 our $VERSION = '1.3.1';
 our $GIT_URL = 'ssh://git@github.com/kbaseapps/kb_pickaxe.git';
 our $GIT_COMMIT_HASH = '0a0baf4023f3d16ba713f49b24dfb87de0b237bb';
@@ -152,22 +152,40 @@ sub runpickaxe
     my $ctx = $kb_pickaxe::kb_pickaxeServer::CallContext;
     my($return);
     #BEGIN runpickaxe
-    $params = $self->{fbaimpl}->util_initialize_call($params,$ctx);
-	Bio::KBase::ObjectAPI::functions::func_run_pickaxe($params);
-    $return = {};
-    $self->{fbaimpl}->util_finalize_call({
-		output => $return,
-		workspace => $params->{workspace},
-		report_name => $params->{out_model_id}.".pickaxe.report",
-		model_ref => $params->{workspace}."/".$params->{out_model_id}
-	});
-    #END runpickaxe
-    my @_bad_returns;
-    (ref($return) eq 'HASH') or push(@_bad_returns, "Invalid type for return variable \"return\" (value was \"$return\")");
-    if (@_bad_returns) {
-	my $msg = "Invalid returns passed to runpickaxe:\n" . join("", map { "\t$_\n" } @_bad_returns);
-	Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
-							       method_name => 'runpickaxe');
+    sub make_tsv_from_model {
+        my $co = shift;
+        my $cpdStHash = shift;
+        my $inputModelF = shift;
+        my $inputModel =  $inputModelF->{data}{modelcompounds};
+
+        open my $cpdListOut, ">", "/kb/module/work/tmp/inputModel.tsv"  or die "Couldn't open inputModel file $!\n";;;
+        print $cpdListOut "id\t\structure\n";
+
+        print "accessing input model $inputModelF->{id}\t genome_ref $inputModelF->{genome_ref}\n";
+        print "Writing the compound input file for Pickaxe\n\n";
+
+        my $count =0;
+        for (my $i=0; $i<@{$inputModel}; $i++){
+            my @cpdId = split /_/, $inputModel->[$i]->{id};
+            $cpdId[0] =~ s/pkc/input/;
+            my $altID = $inputModel->[$i]->{dblinks}->{'ModelSeed'}[0];
+            if (defined $inputModel->[$i]->{smiles}){
+                print $cpdListOut "$cpdId[0]\t$inputModel->[$i]->{smiles}\n";
+                $count++;
+            }
+            elsif (defined $cpdStHash->{$cpdId[0]}){
+                print $cpdListOut "$cpdId[0]\t$co->[$cpdStHash->{$cpdId[0]}]->{structure}\n";
+                $count++;
+            }
+            elsif (defined $cpdStHash->{$altID}){
+                print $cpdListOut "$altID\t$co->[$cpdStHash->{$altID}]->{structure}\n";
+                $count++;
+            }
+
+        }
+        print "$count lines of compounds data will be prepaired for Pickaxe execution, continuing.....\n";
+
+        close $cpdListOut;
     }
     return($return);
 }
@@ -275,7 +293,7 @@ sub find_similar_modelseed_reactions
     				$smartslist->{$reactionset->[$i]} = $smarts;
     			}
     		}
-    } 
+    }
     my $numrxns = keys(%{$smartslist});
     if ($numrxns == 0) {
     		die "No query reactions could be found with fully defined structures";
@@ -290,7 +308,7 @@ sub find_similar_modelseed_reactions
     if (!-e $self->{'scratch'}."/modelseed_reactions.json") {
     		chdir $self->{'scratch'};
     		system("tar -xzf ".$self->{python_script_dir}."/../data/modelseed_reactions.tgz");
-    }   
+    }
     #Call Filipe's python script
     my $command = "python3 ".$self->{python_script_dir}."/fingerprint_matcher.py ".$self->{'scratch'}."/modelseed_reactions.json ".$self->{'scratch'}."/SmartsList.in ".$self->{'scratch'}."/ReactionList.out 0 20";
     print $command."\n";
@@ -328,10 +346,10 @@ sub find_similar_modelseed_reactions
 	    		push(@{$return->{similar_reactions}},[$data->{$inrxn}->[$i]->[1],$inrxn,$data->{$inrxn}->[$i]->[0],0]);
 	    	}
     }
-   	#Loading data into html template for report 
+   	#Loading data into html template for report
    	my $template_hash = {
 		similar_rxn_data => Bio::KBase::ObjectAPI::utilities::TOJSON($simrxn)
-	};	
+	};
     my $htmlreport = Bio::KBase::utilities::build_report_from_template("FindSimilarReactions",$template_hash);
 	Bio::KBase::utilities::print_report_message({message => $htmlreport,append => 0,html => 1});
     $self->{fbaimpl}->util_finalize_call({
@@ -353,7 +371,7 @@ sub find_similar_modelseed_reactions
 
 
 
-=head2 status 
+=head2 status
 
   $return = $obj->status()
 
